@@ -57,6 +57,8 @@ int Table_Open(char *dbname, Schema *schema, bool overwrite, Table **ptable)
     tableHandle = (Table*)malloc(sizeof(Table)); // Should we check for failed allocation??
     tableHandle->schema = schema;
     tableHandle->file_descriptor = file_descriptor;
+    tableHandle->dirtyPageList = Init_DirtyList(tableHandle);
+    tableHandle->dirtyListSize = 0;
     rc = PF_GetFirstPage(file_descriptor, &pagenum, &pagebuf);
 
     if (rc == PFE_OK) {
@@ -68,7 +70,6 @@ int Table_Open(char *dbname, Schema *schema, bool overwrite, Table **ptable)
         free(tableHandle);
         return rc;  // Return the error code
     }
-
     
     *ptable = tableHandle; // Return the initialized Table structure
     // The Table structure only stores the schema. The current functionality
@@ -79,8 +80,33 @@ int Table_Open(char *dbname, Schema *schema, bool overwrite, Table **ptable)
 
 void Table_Close(Table *tbl)
 {
-    UNIMPLEMENTED;
+    if (tbl == NULL) {
+        return; // Nothing to close
+    }
     // Unfix any dirty pages, close file.
+    DirtyPageNode *current = tbl->dirtyPageList;
+    while (current != NULL) {
+        int pageNum = current->pageNum;
+        
+        // Unfix the page with the "dirty" flag set to true
+        int rc = PF_UnfixPage(tbl->file_descriptor, pageNum, TRUE);
+        if (rc != PFE_OK) {
+            PF_PrintError("PF_UnfixPage");
+        }
+
+        // Move to the next node
+        DirtyPageNode *temp = current;
+        current = current->next;
+        free(temp);  // Free the current node
+    }
+    
+    int rc = PF_CloseFile(tbl->file_descriptor);
+    if (rc != PFE_OK) {
+        PF_PrintError("PF_CloseFile");
+    }
+
+    // Free the Table struct itself
+    free(tbl);
 }
 
 int Table_Insert(Table *tbl, byte *record, int len, RecId *rid)
@@ -125,4 +151,43 @@ void Table_Scan(Table *tbl, void *callbackObj, ReadFunc callbackfn)
     // For each page obtained using PF_GetFirstPage and PF_GetNextPage
     //    for each record in that page,
     //          callbackfn(callbackObj, rid, record, recordLen)
+}
+
+// Helpers
+int Init_DirtyList(Table *table) {
+    if (table == NULL) {
+        return -1; // Error: Invalid table
+    }
+
+    table->dirtyPageList = NULL;
+
+    return 0; // Success
+}
+
+int MarkPage_Dirty(Table *table, int pagenum) {
+    if (table == NULL) {
+        return -1; // Error: Invalid table
+    }
+
+    // Check if the page is already in the list
+    DirtyPageNode *current = table->dirtyPageList;
+    while (current != NULL) {
+        if (current->pageNum == pagenum) {
+            return 0; // Page is already marked as dirty
+        }
+        current = current->next;
+    }
+
+    // Create a new node for the dirty page
+    DirtyPageNode *newNode = (DirtyPageNode *)malloc(sizeof(DirtyPageNode));
+    if (newNode == NULL) {
+        return -1; // Error: Memory allocation failure
+    }
+
+    newNode->pageNum = pagenum;
+    newNode->next = table->dirtyPageList;
+    table->dirtyPageList = newNode;
+    table->dirtyListSize++;
+
+    return 0; // Success
 }

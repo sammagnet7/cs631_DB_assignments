@@ -19,9 +19,16 @@ typedef struct {
 } Schema;
 
 typedef struct {
+    short numRecords;
+    short freespaceoffset; // Stores the offset to the end of freespace region in the pagebuf
+    short recordoffset[]; // Stores the offset of each record in pagebuf which are stored bottom up
+} PageHeader;
+
+typedef struct {
     Schema *schema;
 
-    UNIMPLEMENTED; 
+    int file_descriptor; // Cache the file descriptor associated with the file representing the table
+    int firstPageNum; // Store the address of the head of the page list of the file
     
 } Table ;
 

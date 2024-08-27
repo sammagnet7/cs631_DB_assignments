@@ -14,10 +14,13 @@
 
 #define HEADER_SIZE(header) (NUM_HEADER_ENTRIES(header) * ENTRY_SIZE)
 #define FREESPACE_SIZE(header) (header->freespaceoffset - (HEADER_SIZE(header) - 1))
-#define FREESPACE_REGION(header, pagebuffer, length) (pagebuffer+header->freespaceoffset - length + 1)
+#define MAX_RECORD_SIZE PF_PAGE_SIZE - 3*ENTRY_SIZE // Only three entry in header
+#define FREESPACE_REGION(header,pagebuffer,length) (pagebuffer+header->freespaceoffset - length + 1)
 #define RECORD_OFFSET_ARRAY_SIZE(header) (HEADER_SIZE(header) - 2*ENTRY_SIZE)
+#define GET_OFFSET_AT_SLOT(header,slot) (header->recordoffset[slot])
 #define NEXT_SLOT(header) (RECORD_OFFSET_ARRAY_SIZE(header)/ENTRY_SIZE)
-
+#define BUILD_RECORD_ID(pagenum,slot) (pagenum << 16 | slot)
+#define RECORD_SIZE_AT_SLOT(header,slot) (slot == 0)?(PF_PAGE_SIZE - header->recordoffset[0]):(header->recordoffset[slot] - header->recordoffset[slot-1]);
 typedef char byte;
 
 typedef struct {

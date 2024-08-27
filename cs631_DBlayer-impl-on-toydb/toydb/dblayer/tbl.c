@@ -152,23 +152,58 @@ int Table_Get(Table *tbl, RecId rid, byte *record, int maxlen)
 {
     int slot = rid & 0xFFFF;
     int pageNum = rid >> 16;
-
-    UNIMPLEMENTED;
-    // PF_GetThisPage(pageNum)
+    int len;
+    char *pagebuf;
+    PageHeader *header;
+    int rc = PF_GetThisPage(tbl->file_descriptor, pageNum, &pagebuf);
+    if (rc != PFE_OK && rc != PFE_PAGEFIXED)
+    {
+        PF_PrintError("TABLE_GET ");
+        return 0;
+    }
     // In the page get the slot offset of the record, and
+    header = PAGE_HEADER(pagebuf);
+    int offset = GET_OFFSET_AT_SLOT(header, slot);
     // memcpy bytes into the record supplied.
+    memcpy(record, pagebuf[offset], maxlen);
     // Unfix the page
-    return len; // return size of record
+    if (rc != PFE_PAGEFIXED)
+    {
+        PF_UnfixPage(tbl->file_descriptor, pageNum, false);
+    }
+    return RECORD_SIZE_AT_SLOT(header, slot) // return size of record
 }
 
 void Table_Scan(Table *tbl, void *callbackObj, ReadFunc callbackfn)
 {
-
-    UNIMPLEMENTED;
-
+    int pagenum = -1, rc, recordLen;
+    char *pagebuf;
+    RecId recID;
+    byte *record = (byte*)malloc(MAX_RECORD_SIZE);
+    PageHeader *header;
     // For each page obtained using PF_GetFirstPage and PF_GetNextPage
-    //    for each record in that page,
-    //          callbackfn(callbackObj, rid, record, recordLen)
+    while (1)
+    {
+        rc = PF_GetNextPage(tbl->file_descriptor, &pagenum, &pagebuf);
+        if (rc == PFE_EOF)
+            break;
+        if (rc == PFE_OK)
+        {
+            header = PAGE_HEADER(pagebuf);
+            //    for each record in that page,
+            for (int i = 0; i < RECORD_OFFSET_ARRAY_SIZE(header); i++)
+            {
+                recID = BUILD_RECORD_ID(pagenum,i);
+                recordLen = Table_Get(tbl, recID, record, MAX_RECORD_SIZE);
+                callbackfn(callbackObj, recID, record, recordLen);
+            }
+        }
+        else{
+            PF_PrintError("TABLE_SCAN");
+            break;
+        }
+    }
+    free(record);
 }
 
 // Helpers
@@ -228,12 +263,14 @@ int Find_FreeSpace(Table *table, int len)
  Returns errorcode on error, else returns 0
  Also sets the currentpagenum and pagebuf in table
  */
-int Alloc_NewPage(Table* table){
+int Alloc_NewPage(Table *table)
+{
     int pagenum;
-    char* pagebuf;
+    char *pagebuf;
     // Allocate a new page
     int rc = PF_AllocPage(table->file_descriptor, &pagenum, &pagebuf);
-    if(rc != PFE_OK){
+    if (rc != PFE_OK)
+    {
         PF_PrintError("PF_AllocPage ");
         return rc;
     }
@@ -243,7 +280,7 @@ int Alloc_NewPage(Table* table){
     // Set the initial number of slots to 0
     header->numRecords = 0;
 
-    // Set offset to the end of free space region by pointing at last byte 
+    // Set offset to the end of free space region by pointing at last byte
     header->freespaceoffset = PF_PAGE_SIZE - 1;
 
     // Update table structure
@@ -258,10 +295,10 @@ int Alloc_NewPage(Table* table){
  Also updates the page header and sets the record's address to rid
 */
 
-int Copy_ToFreeSpace(Table* table, byte* record, int len, RecId** rid)
+int Copy_ToFreeSpace(Table *table, byte *record, int len, RecId **rid)
 {
     // Copy record of length len to freespace region
-    PageHeader* h = PAGE_HEADER(table->pagebuf);
+    PageHeader *h = PAGE_HEADER(table->pagebuf);
     memcpy(FREESPACE_REGION(h, table->pagebuf, len), record, len);
     // Update header
     int slot = NEXT_SLOT(h);
@@ -271,10 +308,12 @@ int Copy_ToFreeSpace(Table* table, byte* record, int len, RecId** rid)
     // Mark Page as dirty
     MarkPage_Dirty(table, table->currentPageNum);
     // Set record id
-    *rid = table->currentPageNum << 16 | slot;
+    *rid = BUILD_RECORD_ID(table->currentPageNum,slot);
     return 0;
 }
-
+/*
+ Initialise the dirty list used for tracking dirty pages
+*/
 
 int Init_DirtyList(Table *table)
 {
@@ -288,6 +327,9 @@ int Init_DirtyList(Table *table)
     return 0; // Success
 }
 
+/*
+Marks page given by pagenum as dirty in the table's dirtylist
+*/
 int MarkPage_Dirty(Table *table, int pagenum)
 {
     if (table == NULL)

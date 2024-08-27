@@ -68,8 +68,15 @@ int Table_Open(char *dbname, Schema *schema, bool overwrite, Table **ptable)
     {
         tableHandle->firstPageNum = pagenum; // Store the first page number
         tableHandle->currentPageNum = pagenum;
+        tableHandle->pagebuf = pagebuf;
     }
-    else if (rc != PFE_EOF)
+    else if (rc == PFE_EOF)
+    {
+        tableHandle->firstPageNum = pagenum; // Store the first page number
+        tableHandle->currentPageNum = pagenum;
+        tableHandle->pagebuf = NULL;
+    }
+    else
     {
         // If there's an error other than EOF, close the file and return error
         PF_PrintError("PF_GetFirstPage");
@@ -122,17 +129,29 @@ void Table_Close(Table *tbl)
 
 int Table_Insert(Table *tbl, byte *record, int len, RecId *rid)
 {
-    // Allocate a fresh page if len is not enough for remaining space
-    int rc = Find_FreeSpace(tbl, len);
-    if (rc == -1) // Couldn't find required freespace in existing pages
+    int rc;
+    // Check if tbl has no pages
+    if (tbl->currentPageNum == -1 && tbl->firstPageNum == -1 && tbl->pagebuf == NULL)
     {
         rc = Alloc_NewPage(tbl);
         if (rc < 0)
             return rc;
+        tbl->firstPageNum = tbl->currentPageNum;
+    }
+    else
+    {
+        // Allocate a fresh page if len is not enough for remaining space
+        rc = Find_FreeSpace(tbl, len);
+        if (rc == -1) // Couldn't find required freespace in existing pages
+        {
+            rc = Alloc_NewPage(tbl);
+            if (rc < 0)
+                return rc;
+        }
     }
     // Get the next free slot on page, and copy record in the free space
     // Update slot and free space index information on top of page.
-    Copy_ToFreeSpace(tbl, record, len, &rid);
+    Copy_ToFreeSpace(tbl, record, len, rid);
 }
 
 #define checkerr(err)           \
@@ -179,7 +198,7 @@ void Table_Scan(Table *tbl, void *callbackObj, ReadFunc callbackfn)
     int pagenum = -1, rc, recordLen;
     char *pagebuf;
     RecId recID;
-    byte *record = (byte*)malloc(MAX_RECORD_SIZE);
+    byte *record = (byte *)malloc(MAX_RECORD_SIZE);
     PageHeader *header;
     // For each page obtained using PF_GetFirstPage and PF_GetNextPage
     while (1)
@@ -193,12 +212,13 @@ void Table_Scan(Table *tbl, void *callbackObj, ReadFunc callbackfn)
             //    for each record in that page,
             for (int i = 0; i < RECORD_OFFSET_ARRAY_SIZE(header); i++)
             {
-                recID = BUILD_RECORD_ID(pagenum,i);
+                recID = BUILD_RECORD_ID(pagenum, i);
                 recordLen = Table_Get(tbl, recID, record, MAX_RECORD_SIZE);
                 callbackfn(callbackObj, recID, record, recordLen);
             }
         }
-        else{
+        else
+        {
             PF_PrintError("TABLE_SCAN");
             break;
         }
@@ -295,7 +315,7 @@ int Alloc_NewPage(Table *table)
  Also updates the page header and sets the record's address to rid
 */
 
-int Copy_ToFreeSpace(Table *table, byte *record, int len, RecId **rid)
+int Copy_ToFreeSpace(Table *table, byte *record, int len, RecId *rid)
 {
     // Copy record of length len to freespace region
     PageHeader *h = PAGE_HEADER(table->pagebuf);
@@ -308,7 +328,7 @@ int Copy_ToFreeSpace(Table *table, byte *record, int len, RecId **rid)
     // Mark Page as dirty
     MarkPage_Dirty(table, table->currentPageNum);
     // Set record id
-    *rid = BUILD_RECORD_ID(table->currentPageNum,slot);
+    *rid = BUILD_RECORD_ID(table->currentPageNum, slot);
     return 0;
 }
 /*

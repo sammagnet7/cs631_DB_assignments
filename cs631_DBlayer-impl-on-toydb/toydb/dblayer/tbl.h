@@ -8,7 +8,6 @@
 
 #define ENTRY_SIZE sizeof(short)
 #define PAGE_HEADER(pagebuffer) ((PageHeader*)pagebuffer)
-#define HEADER_SIZE(header) ((header->numRecords + 2/*For recordnum and freespaceoffset*/) * sizeof(short)) 
 
 #define NUM_HEADER_ENTRIES(header) (header->numRecords + 2)
 
@@ -56,6 +55,7 @@ typedef struct {
     int dirtyListSize;
 } Table ;
 
+typedef int RecId;
 // Helpers
 int
 Alloc_NewPage(Table* table);
@@ -67,14 +67,14 @@ int
 Get_FreeSpaceLen(Table* table);
 
 int
-Copy_ToFreeSpace(Table* table, byte* record, int len, RecId** rid);
+Copy_ToFreeSpace(Table* table, byte* record, int len, RecId* rid);
 
 int
 Init_DirtyList(Table *table);
 int
 MarkPage_Dirty(Table *table, int pagenum);
 
-typedef int RecId;
+
 
 int
 Table_Open(char *fname, Schema *schema, bool overwrite, Table **table);

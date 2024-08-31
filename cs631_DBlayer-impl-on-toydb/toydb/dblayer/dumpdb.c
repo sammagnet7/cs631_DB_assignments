@@ -101,7 +101,7 @@ int main(int argc, char **argv)
 
         // Ask for populations less than 100000, then more than 100000. Together they should
         // yield the complete database.
-        // index_scan(tbl, schema, indexFD, LESS_THAN_EQUAL, 100000);
+        index_scan(tbl, schema, indexFD, LESS_THAN_EQUAL, 100000);
         index_scan(tbl, schema, indexFD, GREATER_THAN, 100000);
     }
     Table_Close(tbl);

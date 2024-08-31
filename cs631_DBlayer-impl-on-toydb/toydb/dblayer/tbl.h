@@ -38,11 +38,6 @@ typedef struct {
     short recordoffset[]; // Stores the offset of each record in pagebuf which are stored bottom up
 } PageHeader;
 
-typedef struct DirtyPageNode {
-    int pageNum;                 // Page number of the dirty page
-    struct DirtyPageNode *next;  // Pointer to the next node in the linked list
-} DirtyPageNode;
-
 
 typedef struct {
     Schema *schema;
@@ -50,9 +45,7 @@ typedef struct {
     int file_descriptor; // Cache the file descriptor associated with the file representing the table
     int firstPageNum; // Store the address of the head of the page list of the file
     int currentPageNum; // Store the address of the current page of the table being referred
-    char* pagebuf; // Points to a page's data buffer, initialised with the first page's buffer
-    DirtyPageNode* dirtyPageList; // To track the pages made dirty while Table was used.
-    int dirtyListSize;
+    char* pagebuf; // Points to a page's data buffer
 } Table ;
 
 typedef int RecId;
@@ -66,12 +59,6 @@ Find_FreeSpace(Table* table, int len);
 
 int
 Copy_ToFreeSpace(Table* table, byte* record, int len, RecId* rid);
-
-int
-Init_DirtyList(Table *table);
-
-int
-MarkPage_Dirty(Table *table, int pagenum);
 
 
 

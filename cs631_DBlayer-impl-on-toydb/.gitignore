@@ -1,3 +1,6 @@
+*.db*
+dumpdb
+loaddb
 # Prerequisites
 *.d
 

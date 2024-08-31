@@ -30,9 +30,12 @@ int getNthSlotOffset(int slot, char *pageBuf);
  */
 int Table_Open(char *dbname, Schema *schema, bool overwrite, Table **ptable)
 {
-    // TODO: Handle overwrite
     // Initialize PF, create PF file,
     PF_Init();
+    if (overwrite)
+    {
+        PF_DestroyFile(dbname);
+    }
     int rc, file_descriptor, pagenum;
     char *pagebuf;
     Table *tableHandle;
@@ -69,10 +72,11 @@ int Table_Open(char *dbname, Schema *schema, bool overwrite, Table **ptable)
         tableHandle->firstPageNum = pagenum; // Store the first page number
         tableHandle->currentPageNum = pagenum;
         tableHandle->pagebuf = pagebuf;
+        PF_UnfixPage(tableHandle->file_descriptor, pagenum, false);
     }
-    else if (rc == PFE_EOF)
+    else if (rc == PFE_EOF) // Table has no pages
     {
-        tableHandle->firstPageNum = pagenum; // Store the first page number
+        tableHandle->firstPageNum = pagenum; // Store the first page number as -1
         tableHandle->currentPageNum = pagenum;
         tableHandle->pagebuf = NULL;
     }
@@ -130,7 +134,7 @@ void Table_Close(Table *tbl)
 int Table_Insert(Table *tbl, byte *record, int len, RecId *rid)
 {
     int rc;
-    // Check if tbl has no pages
+    // Check if Table has no pages
     if (tbl->currentPageNum == -1 && tbl->firstPageNum == -1 && tbl->pagebuf == NULL)
     {
         rc = Alloc_NewPage(tbl);
@@ -140,28 +144,19 @@ int Table_Insert(Table *tbl, byte *record, int len, RecId *rid)
     }
     else
     {
-        // Allocate a fresh page if len is not enough for remaining space
         rc = Find_FreeSpace(tbl, len);
-        if (rc == -1) // Couldn't find required freespace in existing pages
+        if (rc == -1 || rc == PFE_EOF) // Couldn't find required freespace in existing pages
         {
-            rc = Alloc_NewPage(tbl);
+            rc = Alloc_NewPage(tbl); // Allocate a fresh page if len is not enough for remaining space
             if (rc < 0)
                 return rc;
         }
     }
     // Get the next free slot on page, and copy record in the free space
     // Update slot and free space index information on top of page.
+    // Also unfixes the page
     Copy_ToFreeSpace(tbl, record, len, rid);
 }
-
-#define checkerr(err)           \
-    {                           \
-        if (err < 0)            \
-        {                       \
-            PF_PrintError();    \
-            exit(EXIT_FAILURE); \
-        }                       \
-    }
 
 /*
   Given an rid, fill in the record (but at most maxlen bytes).
@@ -183,14 +178,15 @@ int Table_Get(Table *tbl, RecId rid, byte *record, int maxlen)
     // In the page get the slot offset of the record, and
     header = PAGE_HEADER(pagebuf);
     int offset = GET_OFFSET_AT_SLOT(header, slot);
+    int recordSize = RECORD_SIZE_AT_SLOT(header, slot);
     // memcpy bytes into the record supplied.
-    memcpy(record, pagebuf[offset], maxlen);
+    if (recordSize > maxlen)
+        memcpy(record, &pagebuf[offset], maxlen);
+    else
+        memcpy(record, &pagebuf[offset], recordSize);
     // Unfix the page
-    if (rc != PFE_PAGEFIXED)
-    {
-        PF_UnfixPage(tbl->file_descriptor, pageNum, false);
-    }
-    return RECORD_SIZE_AT_SLOT(header, slot) // return size of record
+    PF_UnfixPage(tbl->file_descriptor, pageNum, false);
+    return recordSize; // return size of record
 }
 
 void Table_Scan(Table *tbl, void *callbackObj, ReadFunc callbackfn)
@@ -198,7 +194,7 @@ void Table_Scan(Table *tbl, void *callbackObj, ReadFunc callbackfn)
     int pagenum = -1, rc, recordLen;
     char *pagebuf;
     RecId recID;
-    byte *record = (byte *)malloc(MAX_RECORD_SIZE);
+    byte record[MAX_RECORD_SIZE];
     PageHeader *header;
     // For each page obtained using PF_GetFirstPage and PF_GetNextPage
     while (1)
@@ -209,8 +205,9 @@ void Table_Scan(Table *tbl, void *callbackObj, ReadFunc callbackfn)
         if (rc == PFE_OK)
         {
             header = PAGE_HEADER(pagebuf);
+            PF_UnfixPage(tbl->file_descriptor, pagenum, false);
             //    for each record in that page,
-            for (int i = 0; i < RECORD_OFFSET_ARRAY_SIZE(header); i++)
+            for (int i = 0; i < header->numRecords; i++)
             {
                 recID = BUILD_RECORD_ID(pagenum, i);
                 recordLen = Table_Get(tbl, recID, record, MAX_RECORD_SIZE);
@@ -223,7 +220,6 @@ void Table_Scan(Table *tbl, void *callbackObj, ReadFunc callbackfn)
             break;
         }
     }
-    free(record);
 }
 
 // Helpers
@@ -266,8 +262,8 @@ int Find_FreeSpace(Table *table, int len)
             table->pagebuf = pagebuf;
             return pagenum; // Found a suitable page, page is now fixed
         }
-        if (rc != PFE_PAGEFIXED) // Unfix only if it wasn't fixed earlier
-            PF_UnfixPage(table->file_descriptor, pagenum, false);
+        // Unfix this page
+        PF_UnfixPage(table->file_descriptor, pagenum, true);
         // Move to the next page
         rc = PF_GetNextPage(table->file_descriptor, &pagenum, &pagebuf);
 
@@ -318,15 +314,17 @@ int Alloc_NewPage(Table *table)
 int Copy_ToFreeSpace(Table *table, byte *record, int len, RecId *rid)
 {
     // Copy record of length len to freespace region
-    PageHeader *h = PAGE_HEADER(table->pagebuf);
-    memcpy(FREESPACE_REGION(h, table->pagebuf, len), record, len);
+    PageHeader *header = PAGE_HEADER(table->pagebuf);
+    memcpy(FREESPACE_REGION(header, table->pagebuf, len), record, len);
     // Update header
-    int slot = NEXT_SLOT(h);
-    h->recordoffset[slot] = h->freespaceoffset - len + 1;
-    h->numRecords += 1;
-    h->freespaceoffset -= len;
+    int slot = NEXT_SLOT(header);
+    header->recordoffset[slot] = header->freespaceoffset - len + 1;
+    header->numRecords += 1;
+    header->freespaceoffset -= len;
     // Mark Page as dirty
-    MarkPage_Dirty(table, table->currentPageNum);
+    // MarkPage_Dirty(table, table->currentPageNum);
+    // Unfix the page
+    PF_UnfixPage(table->file_descriptor, table->currentPageNum, TRUE);
     // Set record id
     *rid = BUILD_RECORD_ID(table->currentPageNum, slot);
     return 0;

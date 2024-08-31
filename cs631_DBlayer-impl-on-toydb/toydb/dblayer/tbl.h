@@ -19,7 +19,7 @@
 #define GET_OFFSET_AT_SLOT(header,slot) (header->recordoffset[slot])
 #define NEXT_SLOT(header) (RECORD_OFFSET_ARRAY_SIZE(header)/ENTRY_SIZE)
 #define BUILD_RECORD_ID(pagenum,slot) (pagenum << 16 | slot)
-#define RECORD_SIZE_AT_SLOT(header,slot) (slot == 0)?(PF_PAGE_SIZE - header->recordoffset[0]):(header->recordoffset[slot] - header->recordoffset[slot-1]);
+#define RECORD_SIZE_AT_SLOT(header,slot) (slot == 0)?(PF_PAGE_SIZE - header->recordoffset[0]):(header->recordoffset[slot-1] - header->recordoffset[slot]);
 typedef char byte;
 
 typedef struct {
@@ -33,7 +33,7 @@ typedef struct {
 } Schema;
 
 typedef struct {
-    short numRecords;
+    short numRecords;      // Stores the number of records in the page
     short freespaceoffset; // Stores the offset to the end of freespace region in the pagebuf
     short recordoffset[]; // Stores the offset of each record in pagebuf which are stored bottom up
 } PageHeader;
@@ -56,6 +56,7 @@ typedef struct {
 } Table ;
 
 typedef int RecId;
+
 // Helpers
 int
 Alloc_NewPage(Table* table);
@@ -63,14 +64,12 @@ Alloc_NewPage(Table* table);
 int
 Find_FreeSpace(Table* table, int len);
 
-int 
-Get_FreeSpaceLen(Table* table);
-
 int
 Copy_ToFreeSpace(Table* table, byte* record, int len, RecId* rid);
 
 int
 Init_DirtyList(Table *table);
+
 int
 MarkPage_Dirty(Table *table, int pagenum);
 

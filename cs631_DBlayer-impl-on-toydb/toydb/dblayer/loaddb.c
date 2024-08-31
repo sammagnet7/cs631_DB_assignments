@@ -84,7 +84,7 @@ loadCSV()
     Schema *sch = parseSchema(line);
     Table *tbl;
 
-    err = Table_Open(DB_NAME, sch, false, &tbl);
+    err = Table_Open(DB_NAME, sch, true, &tbl);
     checkerr(err);
     err = AM_CreateIndex(DB_NAME, 0, 'i', 4);
     indexFD = PF_OpenFile(INDEX_NAME);
@@ -105,7 +105,7 @@ loadCSV()
         int population = atoi(tokens[2]);
 
         // Use the population field as the field to index on
-        err = AM_InsertEntry(indexFD, 'i', 4, tokens[2], rid);
+        err = AM_InsertEntry(indexFD, 'i', 4, &population, rid);
         checkerr(err);
     }
     fclose(fp);

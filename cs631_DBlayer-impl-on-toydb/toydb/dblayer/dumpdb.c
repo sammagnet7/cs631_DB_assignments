@@ -58,7 +58,7 @@ void index_scan(Table *tbl, Schema *schema, int indexFD, int op, int value)
     // Open index ...
     int scanDesc = AM_OpenIndexScan(indexFD, 'i', 4, op, (char *)&value);
     RecId rid;
-    byte record[MAX_RECORD_SIZE];
+    byte record[INPAGE_MAX_RECORD_SPACE];
     int max_len;
     while (true)
     {
@@ -68,7 +68,7 @@ void index_scan(Table *tbl, Schema *schema, int indexFD, int op, int value)
         if (rid != AME_EOF) // If next entry exists
         {
             // fetch rid from table
-            max_len = Table_Get(tbl, rid, record, MAX_RECORD_SIZE);
+            max_len = Table_Get(tbl, rid, record, INPAGE_MAX_RECORD_SPACE);
             // Dump the row
             printRow(schema, rid, record, max_len);
         }

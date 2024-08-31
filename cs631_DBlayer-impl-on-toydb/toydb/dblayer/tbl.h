@@ -6,18 +6,18 @@
 #define INT     2
 #define LONG    3
 
-#define ENTRY_SIZE sizeof(short)
+#define HEADER_FIELD_SIZE sizeof(short)
 #define PAGE_HEADER(pagebuffer) ((PageHeader*)pagebuffer)
 
-#define NUM_HEADER_ENTRIES(header) (header->numRecords + 2)
+#define NUM_HEADER_FIELD(header) (header->numRecords + 2) // count of recordoffset array + two other fields
 
-#define HEADER_SIZE(header) (NUM_HEADER_ENTRIES(header) * ENTRY_SIZE)
+#define HEADER_SIZE(header) (NUM_HEADER_FIELD(header) * HEADER_FIELD_SIZE)
 #define FREESPACE_SIZE(header) (header->freespaceoffset - (HEADER_SIZE(header) - 1))
-#define MAX_RECORD_SIZE PF_PAGE_SIZE - 3*ENTRY_SIZE // Only three entry in header
-#define FREESPACE_REGION(header,pagebuffer,length) (pagebuffer+header->freespaceoffset - length + 1)
-#define RECORD_OFFSET_ARRAY_SIZE(header) (HEADER_SIZE(header) - 2*ENTRY_SIZE)
+#define INPAGE_MAX_RECORD_SPACE (PF_PAGE_SIZE - 3*HEADER_FIELD_SIZE) // Only three entry in header
+#define FREESPACE_INSERTION_INDEX(header,pagebuffer,length) (pagebuffer+header->freespaceoffset - length + 1) // Calculates the address where a new record is inserted
+#define RECORD_OFFSET_ARRAY_SIZE(header) (HEADER_SIZE(header) - 2*HEADER_FIELD_SIZE)
 #define GET_OFFSET_AT_SLOT(header,slot) (header->recordoffset[slot])
-#define NEXT_SLOT(header) (RECORD_OFFSET_ARRAY_SIZE(header)/ENTRY_SIZE)
+#define NEXT_SLOT(header) (RECORD_OFFSET_ARRAY_SIZE(header)/HEADER_FIELD_SIZE)
 #define BUILD_RECORD_ID(pagenum,slot) (pagenum << 16 | slot)
 #define RECORD_SIZE_AT_SLOT(header,slot) (slot == 0)?(PF_PAGE_SIZE - header->recordoffset[0]):(header->recordoffset[slot-1] - header->recordoffset[slot]);
 typedef char byte;

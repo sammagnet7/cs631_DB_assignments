@@ -166,7 +166,7 @@ void Table_Scan(Table *tbl, void *callbackObj, ReadFunc callbackfn)
     int pagenum = -1, ret_val, recordLen;
     char *pagebuf;
     RecId recID;
-    byte record[MAX_RECORD_SIZE];
+    byte record[INPAGE_MAX_RECORD_SPACE];
     PageHeader *header;
     // For each page obtained using PF_GetNextPage
     while (1)
@@ -183,7 +183,7 @@ void Table_Scan(Table *tbl, void *callbackObj, ReadFunc callbackfn)
             for (int i = 0; i < header->numRecords; i++)
             {
                 recID = BUILD_RECORD_ID(pagenum, i);
-                recordLen = Table_Get(tbl, recID, record, MAX_RECORD_SIZE);
+                recordLen = Table_Get(tbl, recID, record, INPAGE_MAX_RECORD_SPACE);
                 callbackfn(callbackObj, recID, record, recordLen);
             }
         }
@@ -223,7 +223,7 @@ int Find_FreeSpace(Table *table, int len)
         header = PAGE_HEADER(pagebuf);
 
         // Calculate the amount of free space
-        int freeSpaceSize = FREESPACE_SIZE(header) - ENTRY_SIZE /*To accomodate the new entry in record offset array*/;
+        int freeSpaceSize = FREESPACE_SIZE(header) - HEADER_FIELD_SIZE /*To accomodate the new entry in record offset array*/;
 
         // Check if the free space is sufficient
         if (freeSpaceSize >= len)
@@ -283,7 +283,7 @@ int Copy_ToFreeSpace(Table *table, byte *record, int len, RecId *rid)
     // Copy record of length len to freespace region
     PageHeader *header = PAGE_HEADER(table->pagebuf);
     // Get freespace of len bytes in this page's buffer using its header
-    memcpy(FREESPACE_REGION(header, table->pagebuf, len), record, len);
+    memcpy(FREESPACE_INSERTION_INDEX(header, table->pagebuf, len), record, len);
     // Update header
     int slot = NEXT_SLOT(header); // Get the next empty slot
     header->recordoffset[slot] = header->freespaceoffset - len + 1; // Adds the offset to this record in slot

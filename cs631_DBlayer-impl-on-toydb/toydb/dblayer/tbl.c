@@ -36,7 +36,7 @@ int Table_Open(char *dbname, Schema *schema, bool overwrite, Table **ptable)
     {
         PF_DestroyFile(dbname);
     }
-    int rc, file_descriptor, pagenum;
+    int ret_val, file_descriptor, pagenum;
     char *pagebuf;
     Table *tableHandle;
 
@@ -44,11 +44,11 @@ int Table_Open(char *dbname, Schema *schema, bool overwrite, Table **ptable)
     if (file_descriptor < 0)
     {
 
-        rc = PF_CreateFile(dbname); // Attempt to create new file
-        if (rc != PFE_OK)
+        ret_val = PF_CreateFile(dbname); // Attempt to create new file
+        if (ret_val != PFE_OK)
         {
             PF_PrintError("PF_CreateFile");
-            return rc; // Return the error code
+            return ret_val; // Return the error code
         }
 
         file_descriptor = PF_OpenFile(dbname); // Now try opening the newly created file
@@ -65,16 +65,16 @@ int Table_Open(char *dbname, Schema *schema, bool overwrite, Table **ptable)
     tableHandle->file_descriptor = file_descriptor;
     tableHandle->dirtyPageList = Init_DirtyList(tableHandle);
     tableHandle->dirtyListSize = 0;
-    rc = PF_GetFirstPage(file_descriptor, &pagenum, &pagebuf);
+    ret_val = PF_GetFirstPage(file_descriptor, &pagenum, &pagebuf);
 
-    if (rc == PFE_OK)
+    if (ret_val == PFE_OK)
     {
         tableHandle->firstPageNum = pagenum; // Store the first page number
         tableHandle->currentPageNum = pagenum;
         tableHandle->pagebuf = pagebuf;
         PF_UnfixPage(tableHandle->file_descriptor, pagenum, false);
     }
-    else if (rc == PFE_EOF) // Table has no pages
+    else if (ret_val == PFE_EOF) // Table has no pages
     {
         tableHandle->firstPageNum = pagenum; // Store the first page number as -1
         tableHandle->currentPageNum = pagenum;
@@ -86,7 +86,7 @@ int Table_Open(char *dbname, Schema *schema, bool overwrite, Table **ptable)
         PF_PrintError("PF_GetFirstPage");
         PF_CloseFile(file_descriptor);
         free(tableHandle);
-        return rc; // Return the error code
+        return ret_val; // Return the error code
     }
 
     *ptable = tableHandle; // Return the initialized Table structure
@@ -109,8 +109,8 @@ void Table_Close(Table *tbl)
         int pageNum = current->pageNum;
 
         // Unfix the page with the "dirty" flag set to true
-        int rc = PF_UnfixPage(tbl->file_descriptor, pageNum, TRUE);
-        if (rc != PFE_OK)
+        int ret_val = PF_UnfixPage(tbl->file_descriptor, pageNum, TRUE);
+        if (ret_val != PFE_OK)
         {
             PF_PrintError("PF_UnfixPage");
         }
@@ -121,8 +121,8 @@ void Table_Close(Table *tbl)
         free(temp); // Free the current node
     }
 
-    int rc = PF_CloseFile(tbl->file_descriptor);
-    if (rc != PFE_OK)
+    int ret_val = PF_CloseFile(tbl->file_descriptor);
+    if (ret_val != PFE_OK)
     {
         PF_PrintError("PF_CloseFile");
     }
@@ -133,23 +133,23 @@ void Table_Close(Table *tbl)
 
 int Table_Insert(Table *tbl, byte *record, int len, RecId *rid)
 {
-    int rc;
+    int ret_val;
     // Check if Table has no pages
     if (tbl->currentPageNum == -1 && tbl->firstPageNum == -1 && tbl->pagebuf == NULL)
     {
-        rc = Alloc_NewPage(tbl);
-        if (rc < 0)
-            return rc;
+        ret_val = Alloc_NewPage(tbl);
+        if (ret_val < 0)
+            return ret_val;
         tbl->firstPageNum = tbl->currentPageNum;
     }
     else
     {
-        rc = Find_FreeSpace(tbl, len);
-        if (rc == -1 || rc == PFE_EOF) // Couldn't find required freespace in existing pages
+        ret_val = Find_FreeSpace(tbl, len);
+        if (ret_val == -1 || ret_val == PFE_EOF) // Couldn't find required freespace in existing pages
         {
-            rc = Alloc_NewPage(tbl); // Allocate a fresh page if len is not enough for remaining space
-            if (rc < 0)
-                return rc;
+            ret_val = Alloc_NewPage(tbl); // Allocate a fresh page if len is not enough for remaining space
+            if (ret_val < 0)
+                return ret_val;
         }
     }
     // Get the next free slot on page, and copy record in the free space
@@ -169,8 +169,8 @@ int Table_Get(Table *tbl, RecId rid, byte *record, int maxlen)
     int len;
     char *pagebuf;
     PageHeader *header;
-    int rc = PF_GetThisPage(tbl->file_descriptor, pageNum, &pagebuf);
-    if (rc != PFE_OK && rc != PFE_PAGEFIXED)
+    int ret_val = PF_GetThisPage(tbl->file_descriptor, pageNum, &pagebuf);
+    if (ret_val != PFE_OK && ret_val != PFE_PAGEFIXED)
     {
         PF_PrintError("TABLE_GET ");
         return 0;
@@ -191,7 +191,7 @@ int Table_Get(Table *tbl, RecId rid, byte *record, int maxlen)
 
 void Table_Scan(Table *tbl, void *callbackObj, ReadFunc callbackfn)
 {
-    int pagenum = -1, rc, recordLen;
+    int pagenum = -1, ret_val, recordLen;
     char *pagebuf;
     RecId recID;
     byte record[MAX_RECORD_SIZE];
@@ -199,10 +199,10 @@ void Table_Scan(Table *tbl, void *callbackObj, ReadFunc callbackfn)
     // For each page obtained using PF_GetFirstPage and PF_GetNextPage
     while (1)
     {
-        rc = PF_GetNextPage(tbl->file_descriptor, &pagenum, &pagebuf);
-        if (rc == PFE_EOF)
+        ret_val = PF_GetNextPage(tbl->file_descriptor, &pagenum, &pagebuf);
+        if (ret_val == PFE_EOF)
             break;
-        if (rc == PFE_OK)
+        if (ret_val == PFE_OK)
         {
             header = PAGE_HEADER(pagebuf);
             PF_UnfixPage(tbl->file_descriptor, pagenum, false);
@@ -239,15 +239,15 @@ int Find_FreeSpace(Table *table, int len)
     int pagenum = table->firstPageNum;
     PageHeader *header;
     // Get the first page
-    int rc = PF_GetThisPage(table->file_descriptor, pagenum, &pagebuf);
+    int ret_val = PF_GetThisPage(table->file_descriptor, pagenum, &pagebuf);
 
     // Iterate through all pages in the table
     while (1)
     {
-        if (rc != PFE_OK && rc != PFE_PAGEFIXED)
+        if (ret_val != PFE_OK && ret_val != PFE_PAGEFIXED)
         {
             PF_PrintError("PF_GetThisPage");
-            return rc;
+            return ret_val;
         }
 
         // Access the page header from the page buffer
@@ -265,9 +265,9 @@ int Find_FreeSpace(Table *table, int len)
         // Unfix this page
         PF_UnfixPage(table->file_descriptor, pagenum, true);
         // Move to the next page
-        rc = PF_GetNextPage(table->file_descriptor, &pagenum, &pagebuf);
+        ret_val = PF_GetNextPage(table->file_descriptor, &pagenum, &pagebuf);
 
-        if (rc == PFE_EOF)
+        if (ret_val == PFE_EOF)
             break; // No more pages
     }
 
@@ -284,11 +284,11 @@ int Alloc_NewPage(Table *table)
     int pagenum;
     char *pagebuf;
     // Allocate a new page
-    int rc = PF_AllocPage(table->file_descriptor, &pagenum, &pagebuf);
-    if (rc != PFE_OK)
+    int ret_val = PF_AllocPage(table->file_descriptor, &pagenum, &pagebuf);
+    if (ret_val != PFE_OK)
     {
         PF_PrintError("PF_AllocPage ");
-        return rc;
+        return ret_val;
     }
     // Set up page header
     PageHeader *header = PAGE_HEADER(pagebuf);

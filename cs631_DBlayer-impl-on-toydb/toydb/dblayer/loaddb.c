@@ -30,6 +30,8 @@ in codec.c to convert strings into compact binary representations
  */
 int encode(Schema *sch, char **fields, byte *record, int spaceLeft)
 {
+// IMPLEMENTED---------------------------------------------------------------------------------------
+
     int byteOffset = 0, bytesEncoded = 0, totalBytesEncoded = 0;
     // for each field
     for (int i = 0; i < sch->numColumns; i++)
@@ -58,6 +60,7 @@ int encode(Schema *sch, char **fields, byte *record, int spaceLeft)
 
     // return the total number of bytes encoded into record
     return totalBytesEncoded;
+// ---------------------------------------------------------------------------------------
 }
 
 Schema *
@@ -84,10 +87,13 @@ loadCSV()
     Schema *sch = parseSchema(line);
     Table *tbl;
 
+// IMPLEMENTED---------------------------------------------------------------------------------------
+
     err = Table_Open(DB_NAME, sch, true, &tbl);
     checkerr(err);
     err = AM_CreateIndex(DB_NAME, 0, 'i', 4);
     indexFD = PF_OpenFile(INDEX_NAME);
+// ---------------------------------------------------------------------------------------
 
     char *tokens[MAX_TOKENS];
     char record[MAX_PAGE_SIZE];
@@ -98,14 +104,22 @@ loadCSV()
         assert(n == sch->numColumns);
         int len = encode(sch, tokens, record, sizeof(record));
         RecId rid;
+// IMPLEMENTED---------------------------------------------------------------------------------------
+
         err = Table_Insert(tbl, record, len, &rid);
+// ---------------------------------------------------------------------------------------
+
         printf("%d %s\n", rid, tokens[0]);
 
         // Indexing on the population column
         int population = atoi(tokens[2]);
 
+// IMPLEMENTED---------------------------------------------------------------------------------------
+
         // Use the population field as the field to index on
         err = AM_InsertEntry(indexFD, 'i', 4, &population, rid);
+// ---------------------------------------------------------------------------------------
+
         checkerr(err);
     }
     fclose(fp);

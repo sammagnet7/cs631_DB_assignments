@@ -1,5 +1,6 @@
 # CS631_Spark_assignment
 
+>Note: Extract the 'newsdata.zip' inside ./given/Resources folder
 ---
 
 ## Assignment Overview
